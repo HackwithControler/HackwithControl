@@ -51,4 +51,7 @@ install.sh
 # 模板文件（會自動生成）
 article-template.md
 
+# 文檔存檔（不部署到 GitHub Pages）
+docs_archive/
+
 # 注意：articles/*.html 需要提交，因為 GitHub Pages 會直接使用
