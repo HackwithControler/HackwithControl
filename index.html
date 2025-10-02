@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <!-- Basic Meta Tags -->
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+    <!-- Primary Meta Tags -->
+    <title>HackwithControler | 專業資安技術部落格 - HTB Write-ups & 滲透測試</title>
+    <meta name="title" content="HackwithControler | 專業資安技術部落格 - HTB Write-ups & 滲透測試">
+    <meta name="description" content="分享 Hack The Box (HTB) 機器破解過程、滲透測試技術、CTF 解題思路與 CVE 漏洞研究。提供詳細的 write-ups、工具使用教學和資安學習心得。">
+    <meta name="keywords" content="Hack The Box, HTB, CTF, 滲透測試, 資安, 資訊安全, Penetration Testing, Cybersecurity, Write-up, CVE, 漏洞分析, Linux, Security Research">
+    <meta name="author" content="HackwithControler">
+    <meta name="robots" content="index, follow">
+    <meta name="language" content="zh-TW">
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://hackwithcontroler.com/">
+    <meta property="og:title" content="HackwithControler | 專業資安技術部落格">
+    <meta property="og:description" content="分享 Hack The Box (HTB) 機器破解過程、滲透測試技術、CTF 解題思路與 CVE 漏洞研究。">
+    <meta property="og:image" content="https://hackwithcontroler.com/static/images/og-image.jpg">
+    <meta property="og:locale" content="zh_TW">
+    <meta property="og:site_name" content="HackwithControler">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:url" content="https://hackwithcontroler.com/">
+    <meta name="twitter:title" content="HackwithControler | 專業資安技術部落格">
+    <meta name="twitter:description" content="分享 Hack The Box (HTB) 機器破解過程、滲透測試技術、CTF 解題思路與 CVE 漏洞研究。">
+    <meta name="twitter:image" content="https://hackwithcontroler.com/static/images/twitter-card.jpg">
+
+    <!-- Canonical URL -->
+    <link rel="canonical" href="https://hackwithcontroler.com/">
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="static/images/favicon.ico">
+    <link rel="apple-touch-icon" sizes="180x180" href="static/images/apple-touch-icon.png">
+
+    <!-- Stylesheet -->
+    <link rel="stylesheet" href="static/css/main.css">
+
+    <!-- Preconnect for Performance -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+
+    <!-- Structured Data (JSON-LD) -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      "name": "HackwithControler",
+      "url": "https://hackwithcontroler.com/",
+      "description": "專業資安技術部落格，分享 Hack The Box write-ups、滲透測試技術與 CTF 解題思路",
+      "author": {
+        "@type": "Person",
+        "name": "HackwithControler"
+      },
+      "potentialAction": {
+        "@type": "SearchAction",
+        "target": "https://hackwithcontroler.com/?s={search_term_string}",
+        "query-input": "required name=search_term_string"
+      }
+    }
+    </script>
+
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Blog",
+      "name": "HackwithControler Blog",
+      "description": "分享 HTB write-ups、滲透測試技術與資安研究",
+      "url": "https://hackwithcontroler.com/",
+      "author": {
+        "@type": "Person",
+        "name": "HackwithControler"
+      },
+      "blogPost": [
+        {
+          "@type": "BlogPosting",
+          "headline": "HTB: Pilgrimage",
+          "description": "利用 ImageMagick 的任意文件讀取漏洞獲取資料庫憑證",
+          "datePublished": "2024-09-18",
+          "author": {
+            "@type": "Person",
+            "name": "HackwithControler"
+          }
+        }
+      ]
+    }
+    </script>
+</head>
+<body>
+    <!-- Matrix Rain Background -->
+    <canvas id="matrix-canvas" aria-hidden="true"></canvas>
+
+    <header role="banner">
+        <div class="container">
+            <nav role="navigation" aria-label="主導航">
+                <h1 class="logo">
+                    <a href="/" aria-label="HackwithControler 首頁">HackwithControler</a>
+                </h1>
+                <ul class="nav-links">
+                    <li><a href="#" class="active" aria-current="page">首頁</a></li>
+                    <li><a href="#articles">文章</a></li>
+                    <li><a href="#about">關於我</a></li>
+                </ul>
+            </nav>
+        </div>
+    </header>
+
+    <main role="main">
+        <!-- Hero Section -->
+        <section class="hero" aria-labelledby="hero-title">
+            <div class="container">
+                <div class="hero-content">
+                    <div class="terminal-window" role="presentation">
+                        <div class="terminal-header">
+                            <span class="terminal-dot red" aria-hidden="true"></span>
+                            <span class="terminal-dot yellow" aria-hidden="true"></span>
+                            <span class="terminal-dot green" aria-hidden="true"></span>
+                        </div>
+                        <div class="terminal-body">
+                            <p class="terminal-line">
+                                <span class="prompt" aria-hidden="true">root@hackwithcontroler:~$</span>
+                                <span id="typed-text" aria-live="polite"></span>
+                                <span class="cursor" aria-hidden="true">|</span>
+                            </p>
+                        </div>
+                    </div>
+                    <h2 id="hero-title" class="hero-title">探索資安的奧秘</h2>
+                    <p class="hero-subtitle">分享 Hack The Box 解題思路、滲透測試技巧與資安研究心得</p>
+                    <div class="hero-buttons">
+                        <a href="#articles" class="btn btn-primary" aria-label="瀏覽文章列表">開始閱讀</a>
+                        <a href="#about" class="btn btn-outline" aria-label="了解更多關於本站">關於我</a>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Articles Section -->
+        <section id="articles" class="articles" aria-labelledby="articles-title">
+            <div class="container">
+                <div class="articles-header">
+                    <h2 id="articles-title">最新文章</h2>
+                    <div class="filter-controls" role="search" aria-label="文章過濾與搜尋">
+                        <div class="filter-group" role="group" aria-label="難度篩選">
+                            <label for="filter-all">難度：</label>
+                            <button class="filter-btn active" data-filter="all" aria-pressed="true">全部</button>
+                            <button class="filter-btn" data-filter="easy" aria-pressed="false">Easy</button>
+                            <button class="filter-btn" data-filter="medium" aria-pressed="false">Medium</button>
+                            <button class="filter-btn" data-filter="hard" aria-pressed="false">Hard</button>
+                            <button class="filter-btn" data-filter="insane" aria-pressed="false">Insane</button>
+                        </div>
+                        <div class="search-box">
+                            <label for="search-input" class="sr-only">搜尋文章</label>
+                            <input type="search" id="search-input" placeholder="🔍 搜尋文章..." aria-label="搜尋文章">
+                        </div>
+                    </div>
+                </div>
+                <div class="article-grid" role="list">
+                    <!-- ARTICLE_LIST_START -->
+
+            <div class="article-card">
+                <a href="articles/htb_pilgrimage.html">
+                    <div class="card-content">
+                        <h3 class="card-title">HTB: Pilgrimage</h3>
+                        <div class="card-meta">
+                            <span class="card-date">2024-09-18</span>
+                            <span class="card-difficulty easy">Easy</span>
+                            <span class="card-read-time">35 min read</span>
+                        </div>
+                        <p class="card-description">Pilgrimage 是一台 Easy 難度機器，利用 ImageMagick 的任意文件讀取漏洞獲取資料庫憑證，然後通過 Binwalk 的路徑遍歷漏洞實現權限提升。</p>
+                        <div class="card-tags">
+                            <span class="card-tag">HTB</span><span class="card-tag">Linux</span><span class="card-tag">ImageMagick</span><span class="card-tag">CVE-2022-44268</span><span class="card-tag">Binwalk</span><span class="card-tag">CVE-2022-4510</span>
+                        </div>
+                    </div>
+                </a>
+            </div>
+            
+
+            <div class="article-card">
+                <a href="articles/htb_keeper.html">
+                    <div class="card-content">
+                        <h3 class="card-title">HTB: Keeper</h3>
+                        <div class="card-meta">
+                            <span class="card-date">2024-10-05</span>
+                            <span class="card-difficulty easy">Easy</span>
+                            <span class="card-read-time">23 min read</span>
+                        </div>
+                        <p class="card-description">Keeper 是一台 Easy 難度的 Linux 機器，涉及 Request Tracker 的預設憑證、KeePass 數據庫提取，以及利用 CVE-2023-32784 從記憶體 dump 中恢復主密碼。</p>
+                        <div class="card-tags">
+                            <span class="card-tag">HTB</span><span class="card-tag">Linux</span><span class="card-tag">Request Tracker</span><span class="card-tag">KeePass</span><span class="card-tag">CVE-2023-32784</span>
+                        </div>
+                    </div>
+                </a>
+            </div>
+            
+
+            <div class="article-card">
+                <a href="articles/htb_surveillance.html">
+                    <div class="card-content">
+                        <h3 class="card-title">HTB: Surveillance</h3>
+                        <div class="card-meta">
+                            <span class="card-date">2024-11-20</span>
+                            <span class="card-difficulty medium">Medium</span>
+                            <span class="card-read-time">27 min read</span>
+                        </div>
+                        <p class="card-description">這台 Medium 難度機器運行著有漏洞的 Craft CMS 和 ZoneMinder。透過 RCE 漏洞取得初始訪問，然後利用 ZoneMinder 的認證繞過和命令注入漏洞提權。</p>
+                        <div class="card-tags">
+                            <span class="card-tag">HTB</span><span class="card-tag">Linux</span><span class="card-tag">Craft CMS</span><span class="card-tag">CVE-2023-41892</span><span class="card-tag">ZoneMinder</span>
+                        </div>
+                    </div>
+                </a>
+            </div>
+            
+
+            <div class="article-card">
+                <a href="articles/htb_analytics.html">
+                    <div class="card-content">
+                        <h3 class="card-title">HTB: Analytics</h3>
+                        <div class="card-meta">
+                            <span class="card-date">2024-12-15</span>
+                            <span class="card-difficulty easy">Easy</span>
+                            <span class="card-read-time">23 min read</span>
+                        </div>
+                        <p class="card-description">一台運行 Metabase 的 Easy 難度機器，透過 CVE-2023-38646 預認證 RCE 漏洞取得初始立足點，並利用 Ubuntu Overlay FS 權限提升漏洞提權至 root。</p>
+                        <div class="card-tags">
+                            <span class="card-tag">HTB</span><span class="card-tag">Linux</span><span class="card-tag">CVE-2023-38646</span><span class="card-tag">Metabase</span><span class="card-tag">Docker</span>
+                        </div>
+                    </div>
+                </a>
+            </div>
+            
+            <!-- ARTICLE_LIST_END -->
+                </div>
+            </div>
+        </section>
+
+        <!-- Tags Cloud Section -->
+        <section class="tags-cloud-section" aria-labelledby="tags-title">
+            <div class="container">
+                <h2 id="tags-title">🏷️ Tags</h2>
+                <div class="tags-cloud" id="tags-cloud" role="list" aria-label="熱門標籤">
+                    <!-- Tags will be dynamically generated -->
+                </div>
+            </div>
+        </section>
+
+        <!-- About Section -->
+        <section id="about" class="about" aria-labelledby="about-title">
+            <div class="container">
+                <h2 id="about-title">關於我</h2>
+                <div class="about-content">
+                    <div class="about-text">
+                        <p>👋 歡迎來到 HackwithControler！</p>
+                        <p>這是一個純粹紀錄自己變強的過程</p>
+                    </div>
+                    <aside class="about-stats" aria-labelledby="stats-title">
+                        <div class="progress-card">
+                            <h3 id="stats-title">📊 難度分布</h3>
+                            <div class="difficulty-bar" role="list" aria-label="文章難度統計">
+                                <div class="bar-item" role="listitem">
+                                    <span class="bar-label">Easy</span>
+                                    <div class="bar-track" role="progressbar" aria-valuenow="75" aria-valuemin="0" aria-valuemax="100" aria-label="Easy 難度佔 75%">
+                                        <div class="bar-fill easy" style="width: 75%"></div>
+                                    </div>
+                                    <span class="bar-count" aria-label="3 篇">3</span>
+                                </div>
+                                <div class="bar-item" role="listitem">
+                                    <span class="bar-label">Medium</span>
+                                    <div class="bar-track" role="progressbar" aria-valuenow="25" aria-valuemin="0" aria-valuemax="100" aria-label="Medium 難度佔 25%">
+                                        <div class="bar-fill medium" style="width: 25%"></div>
+                                    </div>
+                                    <span class="bar-count" aria-label="1 篇">1</span>
+                                </div>
+                                <div class="bar-item" role="listitem">
+                                    <span class="bar-label">Hard</span>
+                                    <div class="bar-track" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" aria-label="Hard 難度佔 0%">
+                                        <div class="bar-fill hard" style="width: 0%"></div>
+                                    </div>
+                                    <span class="bar-count" aria-label="0 篇">0</span>
+                                </div>
+                                <div class="bar-item" role="listitem">
+                                    <span class="bar-label">Insane</span>
+                                    <div class="bar-track" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" aria-label="Insane 難度佔 0%">
+                                        <div class="bar-fill insane" style="width: 0%"></div>
+                                    </div>
+                                    <span class="bar-count" aria-label="0 篇">0</span>
+                                </div>
+                            </div>
+                        </div>
+                    </aside>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer role="contentinfo">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-left">
+                    <p>&copy; 2024 HackwithControler. All rights reserved.</p>
+                </div>
+                <nav class="footer-right" aria-label="社交媒體連結">
+                    <a href="https://github.com/hackwithcontroler" class="footer-link" target="_blank" rel="noopener noreferrer" aria-label="訪問我們的 GitHub">GitHub</a>
+                    <a href="https://twitter.com/hackwithcontroler" class="footer-link" target="_blank" rel="noopener noreferrer" aria-label="在 Twitter 上關注我們">Twitter</a>
+                    <a href="/rss.xml" class="footer-link" aria-label="訂閱 RSS feed">RSS</a>
+                </nav>
+            </div>
+        </div>
+    </footer>
+
+    <script src="static/js/home.js"></script>
+</body>
+</html>

